@@ -3,13 +3,31 @@
 ////////////////////////////////////////////////////////////
 // Headers
 ////////////////////////////////////////////////////////////
+
+#define STB_IMAGE_IMPLEMENTATION
+
 #include <SFML/Graphics.hpp>
 #include <cmath>
 #include <ctime>
 #include <cstdlib>
 #include <filesystem>
+#include "stb_image.h"
 
 namespace fs = std::filesystem;
+
+typedef struct RgbColour
+{
+    unsigned char r;
+    unsigned char g;
+    unsigned char b;
+} RgbColour;
+
+typedef struct HsvColour
+{
+    unsigned char h;
+    unsigned char s;
+    unsigned char v;
+};
 
 sf::Vector2f ScaleFromDimensions(const sf::Vector2u& textureSize, int screenWidth, int screenHeight)
 {
@@ -17,6 +35,107 @@ sf::Vector2f ScaleFromDimensions(const sf::Vector2u& textureSize, int screenWidt
     float scaleY = screenHeight / float(textureSize.y);
     float scale = std::min(scaleX, scaleY);
     return { scale, scale };
+}
+
+void GetPixel(stbi_uc* image, size_t imageWidth, size_t x, size_t y, std::vector<unsigned char> rgb) {
+    const stbi_uc* p = image + (3 * (y * imageWidth + x));
+    rgb.push_back(p[0]);
+    rgb.push_back(p[1]);
+    rgb.push_back(p[2]);
+}
+
+HsvColour RgbToHsv(RgbColour rgb)
+{
+    HsvColour hsv;
+    unsigned char rgbMin, rgbMax;
+
+    rgbMin = rgb.r < rgb.g ? (rgb.r < rgb.b ? rgb.r : rgb.b) : (rgb.g < rgb.b ? rgb.g : rgb.b);
+    rgbMax = rgb.r > rgb.g ? (rgb.r > rgb.b ? rgb.r : rgb.b) : (rgb.g > rgb.b ? rgb.g : rgb.b);
+
+    hsv.v = rgbMax;
+    if (hsv.v == 0)
+    {
+        hsv.h = 0;
+        hsv.s = 0;
+        return hsv;
+    }
+
+    hsv.s = 255 * long(rgbMax - rgbMin) / hsv.v;
+    if (hsv.s == 0)
+    {
+        hsv.h = 0;
+        return hsv;
+    }
+
+    if (rgbMax == rgb.r)
+        hsv.h = 0 + 43 * (rgb.g - rgb.b) / (rgbMax - rgbMin);
+    else if (rgbMax == rgb.g)
+        hsv.h = 85 + 43 * (rgb.b - rgb.r) / (rgbMax - rgbMin);
+    else
+        hsv.h = 171 + 43 * (rgb.r - rgb.g) / (rgbMax - rgbMin);
+
+    return hsv;
+}
+
+void GetImagePixelValues(char const* imagePath)
+{
+    int x, y, channels;
+    unsigned char* data = stbi_load(imagePath, &x, &y, &channels, 3);
+    if (!data)
+    {
+        printf("Error loading image Stb_image");
+
+    }
+
+    printf("Loaded image width: %dpx, height %dpx, and channels %d", x, y, channels);
+
+    
+
+    for (int i = 0; i < x; i++)
+    {
+        for (int j = 0; j < y; j++)
+        {
+            unsigned bytePerPixel = channels;
+            unsigned char* pixelOffset = data + (i + x * j) * bytePerPixel;
+            unsigned char r = pixelOffset[0];
+            unsigned char g = pixelOffset[1];
+            unsigned char b = pixelOffset[2];
+            unsigned char a = channels >= 4 ? pixelOffset[3] : 0xff;
+
+            RgbColour rgb;
+            rgb.r = r;
+            rgb.g = g;
+            rgb.b = b;
+
+            HsvColour hsv;
+            hsv = RgbToHsv(rgb);
+
+            printf("h: %d, s: %d, v: %d \n", hsv.h, hsv.s, hsv.v);
+
+        }
+    }
+   /* unsigned bytePerPixel = channels;
+    unsigned char* pixelOffset = data + (i + x * j) * bytePerPixel;
+    unsigned char r = pixelOffset[0];
+    unsigned char g = pixelOffset[1];
+    unsigned char b = pixelOffset[2];
+    unsigned char a = channels >= 4 ? pixelOffset[3] : 0xff;
+
+    printf("r: %d, g: %d, b: %d", r, g, b);*/
+
+
+    //unsigned char r;
+    //unsigned char g;
+    //unsigned char b;
+
+    //std::vector<unsigned char> rgb;
+
+    //const stbi_uc* p = data + (3 * (1 * x + 1));
+    //rgb.push_back(static_cast<unsigned int>(p[0]));
+    //rgb.push_back(static_cast<unsigned int>(p[1]));
+    //rgb.push_back(static_cast<unsigned int>(p[2]));
+    //
+	//printf("r: %c, g: %c, b: %c" ,rgb[0], rgb[1], rgb[2]);
 }
 
 int main()
@@ -48,6 +167,10 @@ int main()
     sf::Sprite sprite (texture);
     // Make sure the texture fits the screen
     sprite.setScale(ScaleFromDimensions(texture.getSize(),gameWidth,gameHeight));
+
+    // Image Testing here --------------------------------------------------------------------
+    char const* imagePath = imageFilenames[imageIndex].c_str();
+    GetImagePixelValues(imagePath);
 
     sf::Clock clock;
     while (window.isOpen())
