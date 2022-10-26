@@ -8,6 +8,7 @@
 /**
  * TODO:
  * Covert hue value to the colour wheel (frac equation?)
+ * Create vectors to store the images on load or have a temp value in each.
  * Load all images at the start of the program with and without threads?
  * Input temp data for images that have not loaded at the start of the application.
  * Thread for image loading, image sorting, median hue calculations. (Futures???)
@@ -40,7 +41,18 @@ typedef struct HsvColour
     float v;
 }HsvColour;
 
-std::vector<float> hueValues;
+const int gameWidth = 800;
+const int gameHeight = 600;
+
+std::vector<std::shared_ptr<sf::Texture>> loadedImages;
+
+
+
+
+
+
+
+
 
 sf::Vector2f ScaleFromDimensions(const sf::Vector2u& textureSize, int screenWidth, int screenHeight)
 {
@@ -50,12 +62,12 @@ sf::Vector2f ScaleFromDimensions(const sf::Vector2u& textureSize, int screenWidt
     return { scale, scale };
 }
 
-void GetPixel(stbi_uc* image, size_t imageWidth, size_t x, size_t y, std::vector<unsigned char> rgb) {
-    const stbi_uc* p = image + (3 * (y * imageWidth + x));
-    rgb.push_back(p[0]);
-    rgb.push_back(p[1]);
-    rgb.push_back(p[2]);
-}
+//void GetPixel(stbi_uc* image, size_t imageWidth, size_t x, size_t y, std::vector<unsigned char> rgb) {
+//    const stbi_uc* p = image + (3 * (y * imageWidth + x));
+//    rgb.push_back(p[0]);
+//    rgb.push_back(p[1]);
+//    rgb.push_back(p[2]);
+//}
 
 HsvColour RgbToHsv(RgbColour rgb)
 {
@@ -109,39 +121,6 @@ HsvColour RgbToHsv(RgbColour rgb)
 }
 
 
-//HsvColour RgbToHsv(RgbColour rgb)
-//{
-//    HsvColour hsv;
-//    unsigned char rgbMin, rgbMax;
-//
-//    rgbMin = rgb.r < rgb.g ? (rgb.r < rgb.b ? rgb.r : rgb.b) : (rgb.g < rgb.b ? rgb.g : rgb.b);
-//    rgbMax = rgb.r > rgb.g ? (rgb.r > rgb.b ? rgb.r : rgb.b) : (rgb.g > rgb.b ? rgb.g : rgb.b);
-//
-//    hsv.v = rgbMax;
-//    if (hsv.v == 0)
-//    {
-//        hsv.h = 0;
-//        hsv.s = 0;
-//        return hsv;
-//    }
-//
-//    hsv.s = 255 * long(rgbMax - rgbMin) / hsv.v;
-//    if (hsv.s == 0)
-//    {
-//        hsv.h = 0;
-//        return hsv;
-//    }
-//
-//    if (rgbMax == rgb.r)
-//        hsv.h = 0 + 43 * (rgb.g - rgb.b) / (rgbMax - rgbMin);
-//    else if (rgbMax == rgb.g)
-//        hsv.h = 85 + 43 * (rgb.b - rgb.r) / (rgbMax - rgbMin);
-//    else
-//        hsv.h = 171 + 43 * (rgb.r - rgb.g) / (rgbMax - rgbMin);
-//
-//    return hsv;
-//}
-
 float GetMedianHue(std::vector<float> hueVector)
 {
     std::sort(hueVector.begin(), hueVector.end());
@@ -159,6 +138,8 @@ float GetMedianHue(std::vector<float> hueVector)
 void GetImagePixelValues(char const* imagePath)
 {
     int x, y, channels;
+    std::vector<float> hueValues;
+
     unsigned char* data = stbi_load(imagePath, &x, &y, &channels, 3);
     if (!data)
     {
@@ -169,7 +150,8 @@ void GetImagePixelValues(char const* imagePath)
     printf("Loaded image width: %dpx, height %dpx, and channels %d", x, y, channels);
 
     int count = 0;
-    
+    hueValues.resize(x * y);
+
 
     for (int i = 0; i < x; i++)
     {
@@ -189,15 +171,12 @@ void GetImagePixelValues(char const* imagePath)
 
             HsvColour hsv;
             hsv = RgbToHsv(rgb);
-
-            // Don't do push back in the double loop. (Do NOT use std::vector's push_back in double-for loops that process every pixel,
-            // because you know how many pixels you have in advance and you don't want to do e.g. a quarter million allocations for an image,
-            // or having to protect that call with a mutex. Pre-allocate a vector ( std::vector has a resize method) and access each pixel using an appropriate index. 
-            // If a vector has width*height elements, you can calculate an 1D index from 2D coordinates as "x + y*width". Like we saw in the CUDA lecture!)
             
-            hueValues.push_back(hsv.h);
+            hueValues[i + j * x] = hsv.h;
 
             //printf("h: %d, s: %d, v: %d \n", hsv.h, hsv.s, hsv.v);
+
+            // Pixel count increment
             count++;
         }
     }
@@ -208,6 +187,25 @@ void GetImagePixelValues(char const* imagePath)
     auto medianHue = GetMedianHue(hueValues);
 
     printf("Median Hue: %d", static_cast<int>(medianHue));
+}
+
+// Load all images into textures. THIS SHOULD BE USING THREADS!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+void LoadImagesToTexture(std::vector<std::string> imageFilenames) {
+
+    //loadedImages.resize(imageFilenames.size());
+
+
+    for (int i = 0; i < imageFilenames.size(); i++) {
+
+        auto texture = std::make_shared<sf::Texture>();
+        
+        if (!texture->loadFromFile(imageFilenames[i])) {
+            printf("Error loading image to texture - LoadImageToTextures Function");
+        }
+
+        loadedImages.push_back(texture);
+
+    }
 }
 
 
@@ -224,8 +222,7 @@ int main()
 
     // Define some constants
     const float pi = 3.14159f;
-    const int gameWidth = 800;
-    const int gameHeight = 600;
+    
 
     int imageIndex = 0;
 
@@ -234,13 +231,27 @@ int main()
                             sf::Style::Titlebar | sf::Style::Close);
     window.setVerticalSyncEnabled(true);
 
-    // Load an image to begin with
-    sf::Texture texture;
-    if (!texture.loadFromFile(imageFilenames[imageIndex]))
-        return EXIT_FAILURE;
-    sf::Sprite sprite (texture);
-    // Make sure the texture fits the screen
-    sprite.setScale(ScaleFromDimensions(texture.getSize(),gameWidth,gameHeight));
+    // Load all images into sprites for use in the app.                                  THIS SHOULD BE IN A THREAD!!!!!!!!!!!!!!!!!
+    LoadImagesToTexture(imageFilenames);
+
+
+
+
+
+    //orderedImages;
+
+
+
+    //First image to display to the user.
+
+
+    //// Load an image to begin with
+    //sf::Texture texture;
+    //if (!texture.loadFromFile(imageFilenames[imageIndex]))
+    //    return EXIT_FAILURE;
+    //sf::Sprite sprite (texture);
+    //// Make sure the texture fits the screen
+    //sprite.setScale(ScaleFromDimensions(texture.getSize(),gameWidth,gameHeight));
 
     // Image Testing here --------------------------------------------------------------------
     char const* imagePath = imageFilenames[imageIndex].c_str();
@@ -249,8 +260,11 @@ int main()
     // ---------------------------------------------------------------------------------------
 
     sf::Clock clock;
+    int index = 0;
     while (window.isOpen())
     {
+        sf::Sprite sprite;
+
         // Handle events
         sf::Event event;
         while (window.pollEvent(event))
@@ -277,25 +291,19 @@ int main()
             {
                 // adjust the image index
                 if (event.key.code == sf::Keyboard::Key::Left)
-                    imageIndex = (imageIndex + imageFilenames.size() - 1) % imageFilenames.size();
+                    index = (index + imageFilenames.size() - 1) % imageFilenames.size();
 
                 else if (event.key.code == sf::Keyboard::Key::Right)
-                    imageIndex = (imageIndex + 1) % imageFilenames.size();
-
-                // get image filename
-                const auto& imageFilename = imageFilenames[imageIndex];
+                    index = (index + 1) % imageFilenames.size();
 
                 // set it as the window title 
-                window.setTitle(imageFilename);
+                window.setTitle(imageFilenames[index]);
 
-                // ... and load the appropriate texture, and put it in the sprite
-                if (texture.loadFromFile(imageFilename))
-                {
-                    sprite = sf::Sprite(texture);
-                    sprite.setScale(ScaleFromDimensions(texture.getSize(), gameWidth, gameHeight));
-                }
+               
             }
         }
+
+        sprite.setTexture(*loadedImages[index]);
 
         // Clear the window
         window.clear(sf::Color(0, 0, 0));
