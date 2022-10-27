@@ -11,6 +11,7 @@
  * Create vectors to store the images on load or have a temp value in each.
  * Load all images at the start of the program with and without threads?
  * Input temp data for images that have not loaded at the start of the application.
+ * Sort loaded images depending on the hue.
  * Thread for image loading, image sorting, median hue calculations. (Futures???)
  * Measure performance for startup time, app execution, main loop. (See CW printout).
  *
@@ -45,6 +46,7 @@ const int gameWidth = 800;
 const int gameHeight = 600;
 
 std::vector<std::shared_ptr<sf::Texture>> loadedImages;
+std::vector<std::shared_ptr<sf::Texture>> orderedImages;
 
 
 
@@ -189,11 +191,8 @@ void GetImagePixelValues(char const* imagePath)
     printf("Median Hue: %d", static_cast<int>(medianHue));
 }
 
-// Load all images into textures. THIS SHOULD BE USING THREADS!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+// Load all images into textures.                           THIS SHOULD BE USING THREADS!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 void LoadImagesToTexture(std::vector<std::string> imageFilenames) {
-
-    //loadedImages.resize(imageFilenames.size());
-
 
     for (int i = 0; i < imageFilenames.size(); i++) {
 
@@ -204,11 +203,17 @@ void LoadImagesToTexture(std::vector<std::string> imageFilenames) {
         }
 
         loadedImages.push_back(texture);
-
     }
 }
 
+// Sort the loaded images by their hue values.                          This should run in a thread!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+void SortImages() {
 
+
+
+
+
+}
 
 int main()
 {
@@ -235,12 +240,19 @@ int main()
     LoadImagesToTexture(imageFilenames);
 
 
+    // Inputing temp placeholder images into the ordered list.
+    orderedImages.resize(imageFilenames.size());
+
+    for (int i = 0; i < orderedImages.size(); i++) {
+        auto temp = std::make_shared<sf::Texture>();
+        temp->loadFromFile("C:/Users/Conor/Desktop/Coursework1CPS\\placeholder.png");
+
+        orderedImages[i] = temp;
+    }
 
 
 
-    //orderedImages;
-
-
+  
 
     //First image to display to the user.
 
@@ -298,12 +310,11 @@ int main()
 
                 // set it as the window title 
                 window.setTitle(imageFilenames[index]);
-
-               
             }
         }
 
-        sprite.setTexture(*loadedImages[index]);
+        // Set the texture of the spirte used for the image.
+        sprite.setTexture(*orderedImages[index]);
 
         // Clear the window
         window.clear(sf::Color(0, 0, 0));
