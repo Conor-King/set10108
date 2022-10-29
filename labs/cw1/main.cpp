@@ -45,7 +45,7 @@ typedef struct HsvColour
 const int gameWidth = 800;
 const int gameHeight = 600;
 
-std::vector<std::shared_ptr<sf::Texture>> loadedImages;
+std::map<std::shared_ptr<sf::Texture>, float> loadedImages;
 std::vector<std::shared_ptr<sf::Texture>> orderedImages;
 
 
@@ -62,6 +62,10 @@ sf::Vector2f ScaleFromDimensions(const sf::Vector2u& textureSize, int screenWidt
     float scaleY = screenHeight / float(textureSize.y);
     float scale = std::min(scaleX, scaleY);
     return { scale, scale };
+}
+
+float frac(float x) {
+    return x - floorf(x);
 }
 
 //void GetPixel(stbi_uc* image, size_t imageWidth, size_t x, size_t y, std::vector<unsigned char> rgb) {
@@ -137,7 +141,7 @@ float GetMedianHue(std::vector<float> hueVector)
     return medianHue;
 }
 
-void GetImagePixelValues(char const* imagePath)
+int GetImagePixelValues(char const* imagePath)
 {
     int x, y, channels;
     std::vector<float> hueValues;
@@ -189,6 +193,8 @@ void GetImagePixelValues(char const* imagePath)
     auto medianHue = GetMedianHue(hueValues);
 
     printf("Median Hue: %d", static_cast<int>(medianHue));
+
+    return medianHue;
 }
 
 // Load all images into textures.                           THIS SHOULD BE USING THREADS!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -197,20 +203,53 @@ void LoadImagesToTexture(std::vector<std::string> imageFilenames) {
     for (int i = 0; i < imageFilenames.size(); i++) {
 
         auto texture = std::make_shared<sf::Texture>();
+        float hue = 0.0;
         
         if (!texture->loadFromFile(imageFilenames[i])) {
             printf("Error loading image to texture - LoadImageToTextures Function");
         }
 
-        loadedImages.push_back(texture);
+        hue = GetImagePixelValues(imageFilenames[i].c_str());
+
+        loadedImages.emplace(texture, hue);
     }
+
+    printf("\nAll image loaded ------------------------------------------------------------------------------------\n");
 }
 
 // Sort the loaded images by their hue values.                          This should run in a thread!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-void SortImages() {
+void SortImagesHotCold(std::map<std::shared_ptr<sf::Texture>, float> imageHuePair) {
+
+    
+    for (auto iter = imageHuePair.begin(); iter != imageHuePair.end(); iter++) {
+
+        auto hue = iter->second / 360.0;
+
+        auto huePos = frac(hue+1/6);
+
+        printf("hue position: %f", huePos);
+
+    }
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    //std::map<std::shared_ptr<sf::Texture>, int>::iterator iter = imageHuePair.begin();
+
+    //while (iter != imageHuePair.end()) {
 
 
-
+    //    //printf("first: %c", iter->first);
+    //    printf("second: %c", iter->second);
+    //}
 
 
 }
@@ -227,7 +266,7 @@ int main()
 
     // Define some constants
     const float pi = 3.14159f;
-    
+
 
     int imageIndex = 0;
 
@@ -240,7 +279,7 @@ int main()
     LoadImagesToTexture(imageFilenames);
 
 
-    // Inputing temp placeholder images into the ordered list.
+    // Inputing temp placeholder images into the ordered list.     Thread this?????????????????
     orderedImages.resize(imageFilenames.size());
 
     for (int i = 0; i < orderedImages.size(); i++) {
@@ -250,7 +289,8 @@ int main()
         orderedImages[i] = temp;
     }
 
-
+    // Ordering the images based on hue                          Thread??????????????????????
+    SortImagesHotCold(loadedImages);
 
   
 
@@ -265,11 +305,6 @@ int main()
     //// Make sure the texture fits the screen
     //sprite.setScale(ScaleFromDimensions(texture.getSize(),gameWidth,gameHeight));
 
-    // Image Testing here --------------------------------------------------------------------
-    char const* imagePath = imageFilenames[imageIndex].c_str();
-    GetImagePixelValues(imagePath);
-
-    // ---------------------------------------------------------------------------------------
 
     sf::Clock clock;
     int index = 0;
