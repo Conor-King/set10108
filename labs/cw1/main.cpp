@@ -7,14 +7,16 @@
 
 /**
  * TODO:
- * Covert hue value to the colour wheel (frac equation?)
- * Create vectors to store the images on load or have a temp value in each.
+ * 
+ * 
  * Load all images at the start of the program with and without threads?
- * Input temp data for images that have not loaded at the start of the application.
+ * 
  * Sort loaded images depending on the hue.
  * Thread for image loading, image sorting, median hue calculations. (Futures???)
  * Measure performance for startup time, app execution, main loop. (See CW printout).
  *
+ * 
+ * Use a pipline model for the thread distribution thread load, hue, sort!
  */
 #define STB_IMAGE_IMPLEMENTATION
 
@@ -24,6 +26,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include "stb_image.h"
+#include <thread>
 
 namespace fs = std::filesystem;
 
@@ -45,10 +48,10 @@ typedef struct HsvColour
 const int gameWidth = 800;
 const int gameHeight = 600;
 
-std::map<std::shared_ptr<sf::Texture>, float> loadedImages;
+std::map<std::shared_ptr<float>, std::shared_ptr<sf::Texture>> loadedImages;
 std::vector<std::shared_ptr<sf::Texture>> orderedImages;
 
-
+std::vector<std::pair<float, std::shared_ptr<sf::Texture>>> images;
 
 
 
@@ -197,6 +200,18 @@ int GetImagePixelValues(char const* imagePath)
     return medianHue;
 }
 
+// Implemented in main for now........................................................................................................................................
+void ImagePlaceholders() {
+    // Inputing temp placeholder images into the ordered list.     Thread this?????????????????
+    for (int i = 0; i < orderedImages.size(); i++) {
+        auto temp = std::make_shared<sf::Texture>();
+        temp->loadFromFile("C:/Users/Conor/Desktop/Coursework1CPS\\placeholder.png"); // This will not work on another computer????????????????????
+
+        orderedImages[i] = temp;
+    }
+
+}
+
 // Load all images into textures.                           THIS SHOULD BE USING THREADS!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 void LoadImagesToTexture(std::vector<std::string> imageFilenames) {
 
@@ -211,37 +226,43 @@ void LoadImagesToTexture(std::vector<std::string> imageFilenames) {
 
         hue = GetImagePixelValues(imageFilenames[i].c_str());
 
-        loadedImages.emplace(texture, hue);
+        //loadedImages.emplace(hue, texture);
+        images.push_back(std::make_pair(hue, texture));
     }
 
     printf("\nAll image loaded ------------------------------------------------------------------------------------\n");
 }
 
 // Sort the loaded images by their hue values.                          This should run in a thread!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-void SortImagesHotCold(std::map<std::shared_ptr<sf::Texture>, float> imageHuePair) {
+void SortImagesHotCold(std::vector<std::pair<float, std::shared_ptr<sf::Texture>>> hueImagePair) {
 
-    
-    for (auto iter = imageHuePair.begin(); iter != imageHuePair.end(); iter++) {
 
-        auto hue = iter->second / 360.0;
 
-        auto huePos = frac(hue+1/6);
+    for (auto i = 0; i < hueImagePair.size(); i++) {
 
-        printf("hue position: %f", huePos);
+
+
+        auto hue = hueImagePair[i].first / 360.0;
+
+        hueImagePair[i].first = frac(hue + 1 / 6);
+
+        printf("hue position: %f", hueImagePair[i].first);
 
     }
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
+
+    // Sort float values to sort images 
+    std::sort(hueImagePair.begin(), hueImagePair.end());
+    printf("\nImages sorted -----------------------------------------------------------------------------------------\n");
+
+    // Print Values
+    for (auto i = 0; i < hueImagePair.size(); i++) {
+
+        orderedImages[i] = hueImagePair[i].second;
+        printf("hue position: %f \n", hueImagePair[i].first);
+
+    }
+
+
     //std::map<std::shared_ptr<sf::Texture>, int>::iterator iter = imageHuePair.begin();
 
     //while (iter != imageHuePair.end()) {
@@ -253,6 +274,42 @@ void SortImagesHotCold(std::map<std::shared_ptr<sf::Texture>, float> imageHuePai
 
 
 }
+//void SortImagesHotCold(std::map<std::shared_ptr<float>, std::shared_ptr<sf::Texture>> imageHuePair) {
+//
+//    
+//    
+//    for (auto iter = imageHuePair.begin(); iter != imageHuePair.end(); iter++) {
+//
+//        
+//
+//        auto hue = *iter->first / 360.0;
+//
+//        *iter->first = frac(hue+1/6);
+//
+//        printf("hue position: %f", *iter->first);
+//
+//    }
+//    
+//    std::sort(imageHuePair.begin(), imageHuePair.end());
+//    
+//    for (auto iter = imageHuePair.begin(); iter != imageHuePair.end(); iter++) {
+//
+//        printf("hue position: %f \n", *iter->first);
+//
+//    }
+//
+//    
+//    //std::map<std::shared_ptr<sf::Texture>, int>::iterator iter = imageHuePair.begin();
+//
+//    //while (iter != imageHuePair.end()) {
+//
+//
+//    //    //printf("first: %c", iter->first);
+//    //    printf("second: %c", iter->second);
+//    //}
+//
+//
+//}
 
 int main()
 {
@@ -275,22 +332,41 @@ int main()
                             sf::Style::Titlebar | sf::Style::Close);
     window.setVerticalSyncEnabled(true);
 
-    // Load all images into sprites for use in the app.                                  THIS SHOULD BE IN A THREAD!!!!!!!!!!!!!!!!!
-    LoadImagesToTexture(imageFilenames);
 
+    // Start threads for loading, and sorting
+    
+    // Load all images into sprites for use in the app.        THIS SHOULD BE IN A THREAD!!!!!!!!!!!!!!!!!
+    std::thread loadingThread(LoadImagesToTexture, imageFilenames);
+    //LoadImagesToTexture(imageFilenames);
+    loadingThread.join();
 
-    // Inputing temp placeholder images into the ordered list.     Thread this?????????????????
+    // Inputing temp placeholder images into the ordered list.    
     orderedImages.resize(imageFilenames.size());
+    ImagePlaceholders();
 
-    for (int i = 0; i < orderedImages.size(); i++) {
-        auto temp = std::make_shared<sf::Texture>();
-        temp->loadFromFile("C:/Users/Conor/Desktop/Coursework1CPS\\placeholder.png");
+    // Sort the images from hot to cold
+    //std::thread sortingThread(SortImagesHotCold, images);
+    SortImagesHotCold(images);
 
-        orderedImages[i] = temp;
-    }
+
+
+
+
+    
+
+
+
+
+    
+
+    
+
+    
+    
+    
 
     // Ordering the images based on hue                          Thread??????????????????????
-    SortImagesHotCold(loadedImages);
+    
 
   
 
@@ -304,7 +380,7 @@ int main()
     //sf::Sprite sprite (texture);
     //// Make sure the texture fits the screen
     //sprite.setScale(ScaleFromDimensions(texture.getSize(),gameWidth,gameHeight));
-
+    
 
     sf::Clock clock;
     int index = 0;
@@ -337,11 +413,12 @@ int main()
             if (event.type == sf::Event::KeyPressed)
             {
                 // adjust the image index
-                if (event.key.code == sf::Keyboard::Key::Left)
+                if (event.key.code == sf::Keyboard::Key::Left) {
                     index = (index + imageFilenames.size() - 1) % imageFilenames.size();
-
-                else if (event.key.code == sf::Keyboard::Key::Right)
+                }
+                else if (event.key.code == sf::Keyboard::Key::Right) {
                     index = (index + 1) % imageFilenames.size();
+                }
 
                 // set it as the window title 
                 window.setTitle(imageFilenames[index]);
