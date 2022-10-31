@@ -27,9 +27,44 @@
 #include <filesystem>
 #include "stb_image.h"
 #include <thread>
+#include <mutex>
 
 namespace fs = std::filesystem;
 
+struct threadCount {
+    // return if we managed to pop a load from the pile (we can pop only if the number is greater than 0)
+    bool Pop()
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        auto ok = num > 0;
+        if (num > 0)
+            --num;
+        return ok;
+    }
+
+    // increment the size of the pile
+    void Increment()
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        ++num;
+    }
+
+    // get the size of the pile
+    int Num() {
+        std::lock_guard<std::mutex> guard(mutex);
+        return num;
+    }
+
+    // set the starting size of the pile
+    void Initialize(int startingNumberOfLoads) {
+        std::lock_guard<std::mutex> guard(mutex);
+        num = startingNumberOfLoads;
+    }
+
+private:
+    std::mutex mutex;
+    int num = 0;
+};
 
 typedef struct RgbColour
 {
@@ -54,10 +89,22 @@ std::vector<std::shared_ptr<sf::Texture>> orderedImages;
 std::vector<std::pair<float, std::shared_ptr<sf::Texture>>> images;
 
 
+threadCount loadingThreadCount;
+threadCount hueCalcThreadCount;
+threadCount sortThreadCount;
+threadCount finishedCount;
 
+int imageCount = 0;
+int imageIndex = 0;
 
-
-
+void initialize_counts()
+{
+    // Initialize the loading thread with the number of images loaded in the folder. The rest start at 0.
+    loadingThreadCount.Initialize(imageCount);
+    hueCalcThreadCount.Initialize(0);
+    sortThreadCount.Initialize(0);
+    finishedCount.Initialize(0);
+}
 
 sf::Vector2f ScaleFromDimensions(const sf::Vector2u& textureSize, int screenWidth, int screenHeight)
 {
@@ -128,7 +175,6 @@ HsvColour RgbToHsv(RgbColour rgb)
 
     return hsv;
 }
-
 
 float GetMedianHue(std::vector<float> hueVector)
 {
@@ -209,7 +255,6 @@ void ImagePlaceholders() {
 
         orderedImages[i] = temp;
     }
-
 }
 
 // Load all images into textures.                           THIS SHOULD BE USING THREADS!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -218,13 +263,13 @@ void LoadImagesToTexture(std::vector<std::string> imageFilenames) {
     for (int i = 0; i < imageFilenames.size(); i++) {
 
         auto texture = std::make_shared<sf::Texture>();
-        float hue = 0.0;
+        float hue = -1.0;
         
         if (!texture->loadFromFile(imageFilenames[i])) {
             printf("Error loading image to texture - LoadImageToTextures Function");
         }
 
-        hue = GetImagePixelValues(imageFilenames[i].c_str());
+        //hue = GetImagePixelValues(imageFilenames[i].c_str());
 
         //loadedImages.emplace(hue, texture);
         images.push_back(std::make_pair(hue, texture));
@@ -236,18 +281,13 @@ void LoadImagesToTexture(std::vector<std::string> imageFilenames) {
 // Sort the loaded images by their hue values.                          This should run in a thread!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 void SortImagesHotCold(std::vector<std::pair<float, std::shared_ptr<sf::Texture>>> hueImagePair) {
 
-
-
     for (auto i = 0; i < hueImagePair.size(); i++) {
-
-
 
         auto hue = hueImagePair[i].first / 360.0;
 
         hueImagePair[i].first = frac(hue + 1 / 6);
 
         printf("hue position: %f", hueImagePair[i].first);
-
     }
 
     // Sort float values to sort images 
@@ -271,9 +311,8 @@ void SortImagesHotCold(std::vector<std::pair<float, std::shared_ptr<sf::Texture>
     //    //printf("first: %c", iter->first);
     //    printf("second: %c", iter->second);
     //}
-
-
 }
+
 //void SortImagesHotCold(std::map<std::shared_ptr<float>, std::shared_ptr<sf::Texture>> imageHuePair) {
 //
 //    
@@ -311,6 +350,18 @@ void SortImagesHotCold(std::vector<std::pair<float, std::shared_ptr<sf::Texture>
 //
 //}
 
+void load() {
+
+}
+
+void hue() {
+
+}
+
+void sortHue() {
+
+}
+
 int main()
 {
     std::srand(static_cast<unsigned int>(std::time(NULL)));
@@ -321,11 +372,11 @@ int main()
     for (auto& p : fs::directory_iterator(image_folder))
         imageFilenames.push_back(p.path().u8string());
 
+    // Get the count for images in the folder.
+    imageCount = imageFilenames.size();
+
     // Define some constants
     const float pi = 3.14159f;
-
-
-    int imageIndex = 0;
 
     // Create the window of the application
     sf::RenderWindow window(sf::VideoMode(gameWidth, gameHeight, 32), "Image Fever",
@@ -347,28 +398,11 @@ int main()
     // Sort the images from hot to cold
     //std::thread sortingThread(SortImagesHotCold, images);
     SortImagesHotCold(images);
-
-
-
-
-
-    
-
-
-
-
-    
-
-    
-
     
     
     
 
     // Ordering the images based on hue                          Thread??????????????????????
-    
-
-  
 
     //First image to display to the user.
 
@@ -426,7 +460,7 @@ int main()
         }
 
         // Set the texture of the spirte used for the image.
-        sprite.setTexture(*orderedImages[index]);
+        sprite.setTexture(*images[index].second);
 
         // Clear the window
         window.clear(sf::Color(0, 0, 0));
