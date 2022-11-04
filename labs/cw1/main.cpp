@@ -15,6 +15,7 @@
  *
  *
  */
+
 #define STB_IMAGE_IMPLEMENTATION
 
 #include <SFML/Graphics.hpp>
@@ -252,13 +253,12 @@ float GetImagePixelValues(char const* imagePath)
 
 void ImagePlaceholdersNoThread() {
 	float tempHue = 999;
+	sf::Texture temp;
+	temp.loadFromFile("Images/placeholder.png");
 
 	// Inputing temp placeholder images into the list.
 	for (int i = 0; i < MAX_LOADS; i++) {
-		auto temp = std::make_shared<sf::Texture>();
-		temp->loadFromFile("C:/Users/Conor/Desktop/Coursework1CPS\\placeholder.png"); // This will not work on another computer????????????????????
-
-		loadedImages->push_back(std::make_pair(tempHue, *temp));
+		loadedImages->push_back(std::make_pair(tempHue, temp));
 	}
 }
 
@@ -295,7 +295,7 @@ void LoadingFunction(pile_t& pile_in, pile_t& pile_out) {
 			pile_out.Increment();
 			index++;
 		}
-		this_thread::sleep_for(std::chrono::milliseconds(1)); // is this better if we sleep for a tiny bit?
+		//this_thread::sleep_for(std::chrono::milliseconds(1)); // is this better if we sleep for a tiny bit?
 	}
 }
 
@@ -329,7 +329,7 @@ void HueFunction(pile_t& pile_in, pile_t& pile_out, vector<string> imageFilename
 			pile_out.Increment();
 			index++;
 		}
-		this_thread::sleep_for(std::chrono::milliseconds(1)); // is this better if we sleep for a tiny bit?
+		//this_thread::sleep_for(std::chrono::milliseconds(1)); // is this better if we sleep for a tiny bit?
 	}
 }
 
@@ -366,7 +366,7 @@ void SortFunction(pile_t& pile_in, pile_t& pile_out) {
 			// ... and add the item (sort of, by incrementing) to the output pile
 			pile_out.Increment();
 		}
-		this_thread::sleep_for(std::chrono::milliseconds(1)); // is this better if we sleep for a tiny bit?
+		//this_thread::sleep_for(std::chrono::milliseconds(1)); // is this better if we sleep for a tiny bit?
 	}
 }
 
@@ -423,7 +423,7 @@ int main()
 	initialize_piles();
 	ImagePlaceholdersNoThread();
 
-	// create the threads, ensure the program runs until we wash/dry/iron everything, and exit gracefully
+	// Create an array of threads. Will loop until there is nothing more to load/covert/sort.
 	array< thread, 3> threads = { thread(load),
 		thread(hue, imageFilenames),
 		thread(sort) };
