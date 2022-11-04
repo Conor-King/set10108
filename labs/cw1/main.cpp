@@ -26,6 +26,7 @@
 #include "stb_image.h"
 #include <thread>
 #include <mutex>
+#include <shared_mutex>
 #include <condition_variable>
 #include <chrono>
 #include <array>
@@ -38,11 +39,15 @@ using namespace std::chrono;
 const int gameWidth = 800;
 const int gameHeight = 600;
 
+//
+std::shared_mutex mutex_;
+
 // Stores the max size of the image folder.
 int MAX_LOADS = 0;
 
 // Shared pointer stores the list of images as a texture in a pair with the hue of the image.
 auto loadedImages = std::make_shared<std::vector<std::pair<float, sf::Texture>>>();
+auto displayImages = std::make_shared<std::vector<std::pair<float, sf::Texture>>>();
 
 // Finished boolean for timing.
 bool finished = false;
@@ -99,6 +104,7 @@ private:
 };
 
 // our piles
+pile_t to_placeholder_num;
 pile_t to_load_num;
 pile_t to_hue_num;
 pile_t to_sort_num;
@@ -107,12 +113,12 @@ pile_t done_num;
 // initialize all piles
 void initialize_piles()
 {
-	to_load_num.Initialize(MAX_LOADS);
+	to_placeholder_num.Initialize(MAX_LOADS);
+	to_load_num.Initialize(0);
 	to_hue_num.Initialize(0);
 	to_sort_num.Initialize(0);
 	done_num.Initialize(0);
 }
-
 
 sf::Vector2f ScaleFromDimensions(const sf::Vector2u& textureSize, int screenWidth, int screenHeight)
 {
@@ -126,6 +132,7 @@ float frac(float x) {
 	return x - floorf(x);
 }
 
+// Converting RGB values to HSV counterpart.
 HsvColour RgbToHsv(RgbColour rgb)
 {
 	HsvColour hsv;
@@ -176,6 +183,7 @@ HsvColour RgbToHsv(RgbColour rgb)
 	return hsv;
 }
 
+// Sorts the list of hue values and returns the median hue.
 float GetMedianHue(std::vector<float> hueVector)
 {
 	std::sort(hueVector.begin(), hueVector.end());
@@ -185,6 +193,7 @@ float GetMedianHue(std::vector<float> hueVector)
 	return medianHue;
 }
 
+// Gets all the pixel information from the image. Used to get the median hue.
 float GetImagePixelValues(char const* imagePath)
 {
 	int x, y, channels;
@@ -198,7 +207,7 @@ float GetImagePixelValues(char const* imagePath)
 
 	//printf("Loaded image width: %dpx, height %dpx, and channels %d\n", x, y, channels);
 
-	int count = 0;
+	// Set the size of the vector.
 	hueValues.resize(x * y);
 
 	for (int i = 0; i < x; i++)
@@ -212,11 +221,13 @@ float GetImagePixelValues(char const* imagePath)
 			unsigned char b = pixelOffset[2];
 			unsigned char a = channels >= 4 ? pixelOffset[3] : 0xff;
 
+			// Set the RGB values of one pixel
 			RgbColour rgb;
 			rgb.r = r;
 			rgb.g = g;
 			rgb.b = b;
 
+			// Covert one pixel of RGB to HSV
 			HsvColour hsv;
 			hsv = RgbToHsv(rgb);
 
@@ -224,8 +235,7 @@ float GetImagePixelValues(char const* imagePath)
 
 			//printf("h: %d, s: %d, v: %d \n", hsv.h, hsv.s, hsv.v);
 
-			// Pixel count increment
-			count++;
+			
 		}
 	}
 
@@ -236,20 +246,28 @@ float GetImagePixelValues(char const* imagePath)
 	return GetMedianHue(hueValues);
 }
 
-//void ImagePlaceholders(std::condition_variable& placeholderCond) {
-//	float tempHue = 999;
-//
-//	// Inputing temp placeholder images into the list.
-//	for (int i = 0; i < imageCount; i++) {
-//		auto temp = std::make_shared<sf::Texture>();
-//		temp->loadFromFile("Images/placeholder.png"); // This will not work on another computer????????????????????
-//
-//		oldImages.push_back(std::make_pair(tempHue, *temp));
-//		loadedImages.push_back(std::make_pair(tempHue, *temp));
-//	}
-//	//printf("Placeholders Finished!");
-//	placeholderCond.notify_all();
-//}
+// Threaded function for inputing placeholder information into the 
+void ImagePlaceholders(pile_t& pile_in, pile_t& pile_out) {
+	
+	while (done_num.Num() != MAX_LOADS)
+	{
+		float tempHue = 999;
+		sf::Texture temp;
+		temp.loadFromFile("Images/placeholder.png");
+
+		// keep trying to pop while the input pile has things to work on
+		while (pile_in.Pop())
+		{
+			std::shared_lock lock(mutex_);
+			displayImages->push_back(std::make_pair(tempHue, temp));
+			loadedImages->push_back(std::make_pair(tempHue, temp));
+			
+			// Increment image task
+			pile_out.Increment();
+		}
+		this_thread::sleep_for(std::chrono::milliseconds(1)); 
+	}
+}
 
 void ImagePlaceholdersNoThread() {
 	float tempHue = 999;
@@ -258,6 +276,7 @@ void ImagePlaceholdersNoThread() {
 
 	// Inputing temp placeholder images into the list.
 	for (int i = 0; i < MAX_LOADS; i++) {
+		displayImages->push_back(std::make_pair(tempHue, temp));
 		loadedImages->push_back(std::make_pair(tempHue, temp));
 	}
 }
@@ -273,9 +292,9 @@ sf::Texture LoadImagesToTexture(std::string filename) {
 	return texture;
 }
 
+// Loading function thread
 void LoadingFunction(pile_t& pile_in, pile_t& pile_out) {
-	// Even if the input pile is empty and the output pile is empty, we might still have work to do if everything is not done
-	// We're certain that nothing more is comin, if the "done" pile is full
+	
 	while (done_num.Num() != MAX_LOADS)
 	{
 		const char* image_folder = "Images/unsorted";
@@ -288,17 +307,20 @@ void LoadingFunction(pile_t& pile_in, pile_t& pile_out) {
 		// keep trying to pop while the input pile has things to work on
 		while (pile_in.Pop())
 		{
+			std::shared_lock lock(mutex_);
 			//printf("Loading thread started!\n");
 			auto texture = LoadImagesToTexture(imageFilenames[index]);
 			loadedImages->at(index).second = texture;
-			// ... and add the item (sort of, by incrementing) to the output pile
+
+			// Increment hue task
 			pile_out.Increment();
 			index++;
 		}
-		//this_thread::sleep_for(std::chrono::milliseconds(1)); // is this better if we sleep for a tiny bit?
+		this_thread::sleep_for(std::chrono::milliseconds(1)); 
 	}
 }
 
+// Loading function used to test without thread.
 void LoadingFunctionNoThread() {
 	const char* image_folder = "Images/unsorted";
 	std::vector<std::string> imageFilenames;
@@ -311,6 +333,7 @@ void LoadingFunctionNoThread() {
 	}
 }
 
+// Hue function thread
 void HueFunction(pile_t& pile_in, pile_t& pile_out, vector<string> imageFilenames) {
 	while (done_num.Num() != MAX_LOADS)
 	{
@@ -323,16 +346,18 @@ void HueFunction(pile_t& pile_in, pile_t& pile_out, vector<string> imageFilename
 			hue = hue / 360;
 			hue = frac(hue + 1 / 6);
 
+			std::shared_lock lock(mutex_);
 			loadedImages->at(index).first = hue;
 
-			// ... and add the item (sort of, by incrementing) to the output pile
+			// Increment sort task
 			pile_out.Increment();
 			index++;
 		}
-		//this_thread::sleep_for(std::chrono::milliseconds(1)); // is this better if we sleep for a tiny bit?
+		this_thread::sleep_for(std::chrono::milliseconds(1)); 
 	}
 }
 
+// Hue function used to test without threads
 void HueFunctionNoThread(std::vector<std::string> imageFilenames) {
 	for (int i = 0; i < loadedImages->size(); i++)
 	{
@@ -343,33 +368,36 @@ void HueFunctionNoThread(std::vector<std::string> imageFilenames) {
 
 		loadedImages->at(i).first = hue;
 
-		printf("Hue complete : %f\n", hue);
+		//printf("Hue complete : %f\n", hue);
 	}
 }
 
+// Sort images using bubble sort thread.
 void SortFunction(pile_t& pile_in, pile_t& pile_out) {
 	while (done_num.Num() != MAX_LOADS)
 	{
 		// keep trying to pop while the input pile has things to work on
 		while (pile_in.Pop())
 		{
+			std::shared_lock lock(mutex_);
 			for (int i = loadedImages->size(); i >= 2; --i) {
 				for (int j = 0; j < i - 1; j++) {
-					if (loadedImages->at(j).first > loadedImages->at(j+1).first) {
+					if (loadedImages->at(j).first > loadedImages->at(j + 1).first) {
 						auto temp = loadedImages->at(j);
-						loadedImages->at(j) = loadedImages->at(j+1);
-						loadedImages->at(j+1) = temp;
+						loadedImages->at(j) = loadedImages->at(j + 1);
+						loadedImages->at(j + 1) = temp;
 					}
 				}
 			}
 
-			// ... and add the item (sort of, by incrementing) to the output pile
+			// Increment done pile.
 			pile_out.Increment();
 		}
-		//this_thread::sleep_for(std::chrono::milliseconds(1)); // is this better if we sleep for a tiny bit?
+		this_thread::sleep_for(std::chrono::milliseconds(1)); // is this better if we sleep for a tiny bit?
 	}
 }
 
+// Sort function used to test without thread.
 void SortFunctionNoThread() {
 	// Bubble sort.
 	for (int i = loadedImages->size(); i >= 2; --i) {
@@ -383,7 +411,10 @@ void SortFunctionNoThread() {
 	}
 }
 
-// our 3 functions
+void placeholder() {
+	ImagePlaceholders(to_placeholder_num, to_load_num);
+}
+
 void load()
 {
 	LoadingFunction(to_load_num, to_hue_num);
@@ -403,10 +434,11 @@ int main()
 {
 	std::srand(static_cast<unsigned int>(std::time(NULL)));
 
+	// Start timer.
 	clock_t time;
 	time = clock();
 
-	// example folder to load images
+	// Load image filenames.
 	const char* image_folder = "Images/unsorted";
 	std::vector<std::string> imageFilenames;
 	for (auto& p : fs::directory_iterator(image_folder))
@@ -420,14 +452,23 @@ int main()
 		sf::Style::Titlebar | sf::Style::Close);
 	window.setVerticalSyncEnabled(true);
 
-	initialize_piles();
-	ImagePlaceholdersNoThread();
+	// Without Thread Run ------------------------------------------------------------------
+	/*ImagePlaceholdersNoThread();
+	LoadingFunctionNoThread();
+	HueFunctionNoThread(imageFilenames);
+	SortFunctionNoThread();*/
+	//--------------------------------------------------------------------------------------
 
-	// Create an array of threads. Will loop until there is nothing more to load/covert/sort.
-	array< thread, 3> threads = { thread(load),
+	initialize_piles();
+
+	// Create an array of threads. Will loop until there is nothing more to placeholder/load/covert/sort.
+	array< thread, 4> threads = { 
+		thread(placeholder),
+		thread(load),
 		thread(hue, imageFilenames),
 		thread(sort) };
 
+	// Create sprite to display to user
 	sf::Sprite visibleSprite;
 	int displayIndex = 0;
 	//std::vector<std::pair<float, sf::Texture>> oldImages = loadedImages;
@@ -439,8 +480,8 @@ int main()
 	// Testing the output from the pipline.
 	/*while (done_num.Num() != MAX_LOADS)
 	{
-		printf("Checking work status: %d loaded, %d hue conversion, %d sorted, %d done!\n", to_load_num.Num(), to_hue_num.Num(), to_sort_num.Num(), done_num.Num());
-		this_thread::sleep_for(std::chrono::seconds(1));
+		printf("Checking work status: %d placeholder, %d loaded, %d hue conversion, %d sorted, %d done!\n",to_placeholder_num.Num(), to_load_num.Num(), to_hue_num.Num(), to_sort_num.Num(), done_num.Num());
+		this_thread::sleep_for(std::chrono::milliseconds(10));
 	}*/
 
 	while (window.isOpen())
@@ -472,18 +513,19 @@ int main()
 				// adjust the image index
 				if (event.key.code == sf::Keyboard::Key::Left) {
 					displayIndex = (displayIndex + imageFilenames.size() - 1) % imageFilenames.size();
-					
+					displayImages = loadedImages;
 				}
 				else if (event.key.code == sf::Keyboard::Key::Right) {
 					displayIndex = (displayIndex + 1) % imageFilenames.size();
-					
+					displayImages = loadedImages;
 				}
 
 				// set it as the window title
-				window.setTitle("Image Fever");
+				window.setTitle("Image Fever Index: " + std::to_string(displayIndex) + "Median Hue: " + std::to_string(displayImages->at(displayIndex).first));
 			}
 		}
 
+		// If done join all threads.
 		if (done_num.Num() == MAX_LOADS)
 		{
 			finished = true;
@@ -496,6 +538,7 @@ int main()
 			MAX_LOADS = 0;
 		}
 
+		// If finished display time.
 		if (finished)
 		{
 			time = clock() - time;
@@ -503,7 +546,10 @@ int main()
 			finished = false;
 		}
 
-		visibleSprite.setTexture(loadedImages->at(displayIndex).second);
+		if (displayImages->size() > 0) {
+			visibleSprite.setTexture(displayImages->at(displayIndex).second);
+		}
+		
 		// Clear the window
 		window.clear(sf::Color(0, 0, 0));
 		// draw the sprite
